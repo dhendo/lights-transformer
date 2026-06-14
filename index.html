@@ -124,23 +124,23 @@
             <div class="grid">
                 <div class="field">
                     <label for="costPenceInput">Cost per kWh (pence)</label>
-                    <input id="costPenceInput" type="number" min="0" step="1" value="30" />
+                    <input id="costPenceInput" type="number" min="0" step="1" value="24.79" />
                 </div>
                 <div class="field">
-                    <label for="power100Input">Power @ 100%</label>
-                    <input id="power100Input" type="number" min="0" step="0.1" value="24" />
+                    <label for="power100Input">Power kW @ 100%</label>
+                    <input id="power100Input" type="number" min="0" step="0.1" value="26" />
                 </div>
                 <div class="field">
-                    <label for="power60Input">Power @ 60%</label>
-                    <input id="power60Input" type="number" min="0" step="0.1" value="14.4" />
+                    <label for="power60Input">Power kW @ 60%</label>
+                    <input id="power60Input" type="number" min="0" step="0.1" value="16" />
                 </div>
                 <div class="field">
-                    <label for="power35Input">Power @ 35%</label>
-                    <input id="power35Input" type="number" min="0" step="0.1" value="8.4" />
+                    <label for="power35Input">Power kW @ 35%</label>
+                    <input id="power35Input" type="number" min="0" step="0.1" value="9" />
                 </div>
                 <div class="field">
-                    <label for="power30Input">Power @ 30%</label>
-                    <input id="power30Input" type="number" min="0" step="0.1" value="7.2" />
+                    <label for="power30Input">Power kW @ 30%</label>
+                    <input id="power30Input" type="number" min="0" step="0.1" value="8" />
                 </div>
             </div>
         </div>
@@ -379,31 +379,88 @@
             const rows = blocks.map(block => {
                 const start = formatDateTimeForDisplay(block.start);
                 const end = formatDateTimeForDisplay(block.end);
+                const hours = formatHours(block.start, block.end);
+                const power = getBlockPower(block.percentage, costConfig);
+                const kwh = Math.round(hours * power * 100) / 100;
                 const cost = calculateBlockCost(block, costConfig);
                 return `
                     <tr>
                         <td>${start}</td>
                         <td>${end}</td>
+                        <td>${hours}</td>
                         <td>${block.percentage}%</td>
                         <td>${block.far}%</td>
                         <td>${block.near}%</td>
+                        <td>${kwh}</td>
                         <td>${formatCurrency(cost)}</td>
                     </tr>`;
             }).join('');
-            resultsElement.innerHTML = `
+
+            // main table with Duration and kWh
+            let html = `
                 <table>
                     <thead>
                         <tr>
                             <th>Start</th>
                             <th>End</th>
+                            <th>Duration (hrs)</th>
                             <th>Overall %</th>
                             <th>Far %</th>
                             <th>Near %</th>
+                            <th>kWh</th>
                             <th>Cost</th>
                         </tr>
                     </thead>
                     <tbody>${rows}</tbody>
                 </table>`;
+
+            // append monthly summary
+            html += renderMonthlySummary(blocks, costConfig);
+            resultsElement.innerHTML = html;
+        }
+
+        function renderMonthlySummary(blocks, config) {
+            const months = {}; // key => { totalHours, totalKwh, hoursByLevel: {pct: hours}, costByLevel: {pct: cost} }
+
+            blocks.forEach(block => {
+                if (!block.start || !block.end) return;
+                const start = new Date(block.start);
+                const monthKey = `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}`;
+                const hours = Math.max((block.end - block.start) / 3600000, 0);
+                const power = getBlockPower(block.percentage, config);
+                const kwh = hours * power;
+                const cost = hours * power * config.costPerKwhPence / 100; // pounds
+
+                if (!months[monthKey]) {
+                    months[monthKey] = { totalHours: 0, totalKwh: 0, hoursByLevel: {}, costByLevel: {} };
+                }
+                const m = months[monthKey];
+                m.totalHours += hours;
+                m.totalKwh += kwh;
+                const pct = String(block.percentage);
+                m.hoursByLevel[pct] = (m.hoursByLevel[pct] || 0) + hours;
+                m.costByLevel[pct] = (m.costByLevel[pct] || 0) + cost;
+            });
+
+            const monthKeys = Object.keys(months).sort();
+            if (monthKeys.length === 0) return '';
+
+            let out = '<h3>Monthly Summary</h3>';
+            monthKeys.forEach(key => {
+                const data = months[key];
+                out += `\n<table>\n<thead><tr><th colspan="4">${key}</th></tr></thead><tbody>`;
+                out += `<tr><th>Total Hours</th><td>${Math.round(data.totalHours*100)/100}</td><th>Total kWh</th><td>${Math.round(data.totalKwh*100)/100}</td></tr>`;
+                out += `<tr><th>Level</th><th>Total Hours</th><th>Total Cost (£)</th><th>kWh</th></tr>`;
+                const levelKeys = Object.keys(data.hoursByLevel).sort((a,b)=>Number(b)-Number(a));
+                levelKeys.forEach(pct => {
+                    const hrs = Math.round(data.hoursByLevel[pct]*100)/100;
+                    const cost = Math.round((data.costByLevel[pct]||0)*100)/100;
+                    const kwh = Math.round(((data.totalKwh ? (data.hoursByLevel[pct] ? (data.hoursByLevel[pct] * ( (getBlockPower(Number(pct), config)) ) ) : 0) : 0))*100)/100;
+                    out += `<tr><td>${pct}%</td><td>${hrs}</td><td>${formatCurrency(cost)}</td><td>${kwh}</td></tr>`;
+                });
+                out += '</tbody></table>';
+            });
+            return out;
         }
 
         function createICS(blocks) {
@@ -460,11 +517,11 @@
 
         function getCostConfig() {
             return {
-                costPerKwhPence: Number(costPenceInput.value) || 29,
-                power100: Number(power100Input.value) || 24,
-                power60: Number(power60Input.value) || 14.4,
-                power35: Number(power35Input.value) || 8.4,
-                power30: Number(power30Input.value) || 7.2,
+                costPerKwhPence: Number(costPenceInput.value) || 24.79,
+                power100: Number(power100Input.value) || 26,
+                power60: Number(power60Input.value) || 16,
+                power35: Number(power35Input.value) || 9,
+                power30: Number(power30Input.value) || 8,
             };
         }
 
