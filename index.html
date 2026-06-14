@@ -124,23 +124,23 @@
             <div class="grid">
                 <div class="field">
                     <label for="costPenceInput">Cost per kWh (pence)</label>
-                    <input id="costPenceInput" type="number" min="0" step="1" value="29" />
+                    <input id="costPenceInput" type="number" min="0" step="1" value="30" />
                 </div>
                 <div class="field">
                     <label for="power100Input">Power @ 100%</label>
-                    <input id="power100Input" type="number" min="0" step="0.1" value="10" />
+                    <input id="power100Input" type="number" min="0" step="0.1" value="24" />
                 </div>
                 <div class="field">
                     <label for="power60Input">Power @ 60%</label>
-                    <input id="power60Input" type="number" min="0" step="0.1" value="6" />
+                    <input id="power60Input" type="number" min="0" step="0.1" value="14.4" />
                 </div>
                 <div class="field">
                     <label for="power35Input">Power @ 35%</label>
-                    <input id="power35Input" type="number" min="0" step="0.1" value="3.5" />
+                    <input id="power35Input" type="number" min="0" step="0.1" value="8.4" />
                 </div>
                 <div class="field">
                     <label for="power30Input">Power @ 30%</label>
-                    <input id="power30Input" type="number" min="0" step="0.1" value="3" />
+                    <input id="power30Input" type="number" min="0" step="0.1" value="7.2" />
                 </div>
             </div>
         </div>
@@ -461,10 +461,10 @@
         function getCostConfig() {
             return {
                 costPerKwhPence: Number(costPenceInput.value) || 29,
-                power100: Number(power100Input.value) || 10,
-                power60: Number(power60Input.value) || 6,
-                power35: Number(power35Input.value) || 3.5,
-                power30: Number(power30Input.value) || 3,
+                power100: Number(power100Input.value) || 24,
+                power60: Number(power60Input.value) || 14.4,
+                power35: Number(power35Input.value) || 8.4,
+                power30: Number(power30Input.value) || 7.2,
             };
         }
 
