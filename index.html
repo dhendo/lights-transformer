@@ -396,8 +396,8 @@
                     </tr>`;
             }).join('');
 
-            // show monthly summary above the detailed table
-            let html = renderMonthlySummary(blocks, costConfig);
+            // show cost-per-hour table above the monthly summary, then the detailed table
+            let html = renderCostPerHourTable(costConfig) + renderMonthlySummary(blocks, costConfig);
 
             // main table with Duration and kWh
             html += `
@@ -462,6 +462,19 @@
                 });
                 out += '</tbody></table>';
             });
+            return out;
+        }
+
+        function renderCostPerHourTable(config) {
+            const options = [100, 60, 35, 30];
+            let out = '<h3>Cost per Hour</h3>';
+            out += '<table><thead><tr><th>Level</th><th>Power (kW)</th><th>Cost per hour (£)</th></tr></thead><tbody>';
+            options.forEach(pct => {
+                const power = getBlockPower(pct, config);
+                const costPerHour = power * config.costPerKwhPence / 100;
+                out += `<tr><td>${pct}%</td><td>${power}</td><td>${formatCurrency(Math.round(costPerHour*100)/100)}</td></tr>`;
+            });
+            out += '</tbody></table>';
             return out;
         }
 
