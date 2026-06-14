@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lights Transformer</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            line-height: 1.5;
+            margin: 0;
+            padding: 24px;
+            background: #f4f6fb;
+            color: #111;
+        }
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 14px;
+            box-shadow: 0 18px 50px rgba(15, 23, 42, 0.12);
+            padding: 32px;
+        }
+        h1 {
+            margin-top: 0;
+            font-size: 2rem;
+        }
+        p {
+            margin: 0.75rem 0;
+        }
+        label {
+            display: block;
+            margin-top: 1rem;
+            font-weight: 600;
+        }
+        input[type="file"] {
+            margin-top: 0.5rem;
+        }
+        button {
+            margin-top: 1rem;
+            padding: 0.85rem 1.3rem;
+            border: none;
+            border-radius: 10px;
+            background: #2563eb;
+            color: white;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.15s ease, background 0.15s ease;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            background: #1d4ed8;
+        }
+        .status {
+            margin-top: 1rem;
+            padding: 18px;
+            border-radius: 12px;
+            background: #eef2ff;
+            color: #1e3a8a;
+            font-size: 0.98rem;
+        }
+        .settings {
+            margin-top: 1rem;
+            padding: 18px;
+            border-radius: 14px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+        }
+        .grid {
+            display: grid;
+            gap: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        }
+        .field {
+            display: flex;
+            flex-direction: column;
+        }
+        .field input {
+            margin-top: 0.5rem;
+            padding: 0.75rem 0.85rem;
+            border-radius: 10px;
+            border: 1px solid #cbd5e1;
+            font-size: 0.95rem;
+        }
+        .output {
+            margin-top: 1.5rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px 14px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        th {
+            background: #f8fafc;
+            font-weight: 700;
+        }
+        pre {
+            margin-top: 1rem;
+            padding: 16px;
+            border-radius: 12px;
+            background: #111827;
+            color: #f8fafc;
+            overflow-x: auto;
+            font-size: 0.95rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Lights Transformer</h1>
+        <p>Upload your light event JSON, build light-on blocks, calculate run cost, and export them as Google Calendar `.ics` events.</p>
+        <label for="fileInput">Select JSON file</label>
+        <input id="fileInput" type="file" accept="application/json" />
+        <div class="settings">
+            <label>Electricity cost settings</label>
+            <div class="grid">
+                <div class="field">
+                    <label for="costPenceInput">Cost per kWh (pence)</label>
+                    <input id="costPenceInput" type="number" min="0" step="1" value="29" />
+                </div>
+                <div class="field">
+                    <label for="power100Input">Power @ 100%</label>
+                    <input id="power100Input" type="number" min="0" step="0.1" value="10" />
+                </div>
+                <div class="field">
+                    <label for="power60Input">Power @ 60%</label>
+                    <input id="power60Input" type="number" min="0" step="0.1" value="6" />
+                </div>
+                <div class="field">
+                    <label for="power35Input">Power @ 35%</label>
+                    <input id="power35Input" type="number" min="0" step="0.1" value="3.5" />
+                </div>
+                <div class="field">
+                    <label for="power30Input">Power @ 30%</label>
+                    <input id="power30Input" type="number" min="0" step="0.1" value="3" />
+                </div>
+            </div>
+        </div>
+        <button id="exportButton" disabled>Download .ics</button>
+        <div id="status" class="status">No file loaded.</div>
+        <div id="results" class="output"></div>
+        <pre id="icsPreview" hidden></pre>
+    </div>
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const exportButton = document.getElementById('exportButton');
+        const statusElement = document.getElementById('status');
+        const resultsElement = document.getElementById('results');
+        const icsPreview = document.getElementById('icsPreview');
+        const costPenceInput = document.getElementById('costPenceInput');
+        const power100Input = document.getElementById('power100Input');
+        const power60Input = document.getElementById('power60Input');
+        const power35Input = document.getElementById('power35Input');
+        const power30Input = document.getElementById('power30Input');
+
+        let currentBlocks = [];
+
+        fileInput.addEventListener('change', handleFileUpload);
+        exportButton.addEventListener('click', downloadICS);
+        costPenceInput.addEventListener('input', handleSettingsChange);
+        power100Input.addEventListener('input', handleSettingsChange);
+        power60Input.addEventListener('input', handleSettingsChange);
+        power35Input.addEventListener('input', handleSettingsChange);
+        power30Input.addEventListener('input', handleSettingsChange);
+
+        function handleSettingsChange() {
+            if (currentBlocks.length > 0) {
+                renderBlocks(currentBlocks);
+                const icsText = createICS(currentBlocks);
+                icsPreview.hidden = false;
+                icsPreview.textContent = icsText;
+            }
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files?.[0];
+            if (!file) {
+                updateStatus('No file selected.', true);
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const json = JSON.parse(reader.result);
+                    const events = extractLightEvents(json);
+                    const blocks = buildLightBlocks(events);
+                    renderBlocks(blocks);
+                    currentBlocks = blocks;
+                    exportButton.disabled = blocks.length === 0;
+                    if (blocks.length > 0) {
+                        const icsText = createICS(blocks);
+                        icsPreview.hidden = false;
+                        icsPreview.textContent = icsText;
+                    } else {
+                        icsPreview.hidden = true;
+                        icsPreview.textContent = '';
+                    }
+                } catch (error) {
+                    updateStatus('Failed to parse JSON: ' + error.message, true);
+                    resultsElement.innerHTML = '';
+                    exportButton.disabled = true;
+                    icsPreview.hidden = true;
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function updateStatus(message, isError = false) {
+            statusElement.textContent = message;
+            statusElement.style.background = isError ? '#fee2e2' : '#eef2ff';
+            statusElement.style.color = isError ? '#991b1b' : '#1e3a8a';
+        }
+
+        function extractLightEvents(data) {
+            if (!data || !Array.isArray(data.logbookInfos)) {
+                return [];
+            }
+            const events = [];
+            data.logbookInfos.forEach(dayEntry => {
+                const list = Array.isArray(dayEntry.logbookInfoList) ? dayEntry.logbookInfoList : [];
+                list.forEach(record => {
+                    if ((record.eventType !== 'CONTROLLED_VIA_SWITCH' && record.eventType !== 'CONTROLLED_VIA_APP') || !record.logInfo) {
+                        return;
+                    }
+                    const timestamp = parseTimestamp(record.timestamp);
+                    if (!timestamp) {
+                        return;
+                    }
+                    const updates = {};
+                    const labels = {};
+
+                    if (record.logInfo.fieldSceneLogInfo) {
+                        const scene = record.logInfo.fieldSceneLogInfo;
+                        const fieldSceneInfo = Array.isArray(scene.fieldSceneInfo) ? scene.fieldSceneInfo : [];
+                        fieldSceneInfo.forEach(info => {
+                            const key = getGroupKey(info, scene);
+                            if (key) {
+                                updates[key] = info.lightLevel ?? 0;
+                                labels[key] = info.groupName || info.groupName || scene.fieldName || 'Unknown';
+                            }
+                        });
+                    }
+
+                    if (record.logInfo.masterSceneLogInfo && Array.isArray(record.logInfo.masterSceneLogInfo.masterSceneInfo)) {
+                        record.logInfo.masterSceneLogInfo.masterSceneInfo.forEach(scene => {
+                            const fieldSceneInfo = Array.isArray(scene.fieldSceneInfo) ? scene.fieldSceneInfo : [];
+                            fieldSceneInfo.forEach(info => {
+                                const key = getGroupKey(info, scene);
+                                if (key) {
+                                    updates[key] = info.lightLevel ?? 0;
+                                    labels[key] = info.groupName || scene.fieldName || 'Unknown';
+                                }
+                            });
+                        });
+                    }
+
+                    if (Object.keys(updates).length > 0) {
+                        events.push({ timestamp, updates, labels, raw: record });
+                    }
+                });
+            });
+            return events.sort((a, b) => a.timestamp - b.timestamp);
+        }
+
+        function getGroupKey(info, scene) {
+            const fieldId = info.groupId ?? info.fieldId ?? scene.fieldId;
+            if (fieldId !== undefined && fieldId !== null) {
+                return String(fieldId);
+            }
+            if (info.groupName) {
+                return info.groupName;
+            }
+            if (scene.fieldName) {
+                return scene.fieldName;
+            }
+            return null;
+        }
+
+        function buildLightBlocks(events) {
+            const state = { levels: {}, labels: {} };
+            const blocks = [];
+            let activeBlock = null;
+            let lastOverall = 0;
+
+            events.forEach(event => {
+                Object.entries(event.updates).forEach(([key, level]) => {
+                    state.levels[key] = level ?? 0;
+                });
+                Object.assign(state.labels, event.labels);
+
+                const overall = calculateAverage(state.levels);
+                const now = event.timestamp;
+                const isOn = overall > 0;
+                const previousOn = lastOverall > 0;
+
+                if (activeBlock && (!isOn || overall !== activeBlock.percentage)) {
+                    activeBlock.end = now;
+                    blocks.push(activeBlock);
+                    activeBlock = null;
+                }
+
+                if (!activeBlock && isOn) {
+                    activeBlock = {
+                        start: now,
+                        end: null,
+                        percentage: overall,
+                        far: getLevelByLabel(state.levels, state.labels, 'Far Half Pitch'),
+                        near: getLevelByLabel(state.levels, state.labels, 'Near Half Pitch'),
+                        details: { ...state.levels },
+                    };
+                }
+
+                if (activeBlock && isOn && overall !== activeBlock.percentage) {
+                    // reopened block at the same timestamp after a change
+                    activeBlock = {
+                        start: now,
+                        end: null,
+                        percentage: overall,
+                        far: getLevelByLabel(state.levels, state.labels, 'Far Half Pitch'),
+                        near: getLevelByLabel(state.levels, state.labels, 'Near Half Pitch'),
+                        details: { ...state.levels },
+                    };
+                }
+
+                lastOverall = overall;
+            });
+
+            if (activeBlock) {
+                // close any open block at the last known timestamp
+                activeBlock.end = activeBlock.start;
+                blocks.push(activeBlock);
+            }
+
+            return blocks.map(block => ({
+                start: block.start,
+                end: block.end,
+                percentage: block.percentage,
+                far: block.far,
+                near: block.near,
+                details: block.details,
+            }));
+        }
+
+        function calculateAverage(levels) {
+            const values = Object.values(levels).map(value => Number(value) || 0);
+            if (values.length === 0) {
+                return 0;
+            }
+            const sum = values.reduce((acc, value) => acc + value, 0);
+            return Math.round((sum / values.length) * 100) / 100;
+        }
+
+        function getLevelByLabel(levels, labels, labelName) {
+            for (const [key, label] of Object.entries(labels)) {
+                if (label === labelName && levels[key] !== undefined) {
+                    return Number(levels[key]) || 0;
+                }
+            }
+            const values = Object.values(levels).map(value => Number(value) || 0);
+            return values.length > 0 ? values[0] : 0;
+        }
+
+        function renderBlocks(blocks) {
+            if (blocks.length === 0) {
+                updateStatus('No lighting blocks found in the uploaded file.', true);
+                resultsElement.innerHTML = '<p>No on-period blocks were detected.</p>';
+                return;
+            }
+            updateStatus(`${blocks.length} light block(s) generated. Ready to download .ics.`);
+            const costConfig = getCostConfig();
+            const rows = blocks.map(block => {
+                const start = formatDateTimeForDisplay(block.start);
+                const end = formatDateTimeForDisplay(block.end);
+                const cost = calculateBlockCost(block, costConfig);
+                return `
+                    <tr>
+                        <td>${start}</td>
+                        <td>${end}</td>
+                        <td>${block.percentage}%</td>
+                        <td>${block.far}%</td>
+                        <td>${block.near}%</td>
+                        <td>${formatCurrency(cost)}</td>
+                    </tr>`;
+            }).join('');
+            resultsElement.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Start</th>
+                            <th>End</th>
+                            <th>Overall %</th>
+                            <th>Far %</th>
+                            <th>Near %</th>
+                            <th>Cost</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>`;
+        }
+
+        function createICS(blocks) {
+            const lines = [
+                'BEGIN:VCALENDAR',
+                'VERSION:2.0',
+                'CALSCALE:GREGORIAN',
+                'PRODID:-//lights-transformer//EN'
+            ];
+
+            const costConfig = getCostConfig();
+            blocks.forEach((block, index) => {
+                if (!block.end || !block.start) {
+                    return;
+                }
+                const cost = calculateBlockCost(block, costConfig);
+                const summary = `Lights ${block.percentage}% (£${formatCurrency(cost)})`;
+                const description = `Far ${block.far}%\\nNear ${block.near}%\\nCost: £${formatCurrency(cost)}\\nDuration: ${formatHours(block.start, block.end)} hrs`;
+                lines.push('BEGIN:VEVENT');
+                lines.push(`UID:${createUID(index, block)}`);
+                lines.push(`DTSTAMP:${formatDateTimeICS(new Date())}`);
+                lines.push(`DTSTART:${formatDateTimeICS(block.start)}`);
+                lines.push(`DTEND:${formatDateTimeICS(block.end)}`);
+                lines.push(`SUMMARY:${escapeICSText(summary)}`);
+                lines.push(`DESCRIPTION:${escapeICSText(description)}`);
+                lines.push('END:VEVENT');
+            });
+
+            lines.push('END:VCALENDAR');
+            return lines.join('\r\n');
+        }
+
+        function createUID(index, block) {
+            return `lights-transformer-${index}-${formatDateTimeICS(block.start)}@local`;
+        }
+
+        function escapeICSText(value) {
+            return String(value)
+                .replace(/\\/g, '\\\\')
+                .replace(/\n/g, '\\n')
+                .replace(/;/g, '\\;')
+                .replace(/,/g, '\\,');
+        }
+
+        function formatDateTimeICS(date) {
+            const year = date.getFullYear();
+            const month = pad(date.getMonth() + 1);
+            const day = pad(date.getDate());
+            const hours = pad(date.getHours());
+            const minutes = pad(date.getMinutes());
+            const seconds = pad(date.getSeconds());
+            return `${year}${month}${day}T${hours}${minutes}${seconds}`;
+        }
+
+        function getCostConfig() {
+            return {
+                costPerKwhPence: Number(costPenceInput.value) || 29,
+                power100: Number(power100Input.value) || 10,
+                power60: Number(power60Input.value) || 6,
+                power35: Number(power35Input.value) || 3.5,
+                power30: Number(power30Input.value) || 3,
+            };
+        }
+
+        function calculateBlockCost(block, config) {
+            const power = getBlockPower(block.percentage, config);
+            const hours = Math.max((block.end - block.start) / 3600000, 0);
+            const costPence = hours * power * config.costPerKwhPence;
+            return Math.round(costPence) / 100;
+        }
+
+        function getBlockPower(percentage, config) {
+            if (percentage === 100) return config.power100;
+            if (percentage === 60) return config.power60;
+            if (percentage === 35) return config.power35;
+            if (percentage === 30) return config.power30;
+            return Math.round((config.power100 * (percentage / 100)) * 100) / 100;
+        }
+
+        function formatCurrency(value) {
+            return Number(value).toFixed(2);
+        }
+
+        function formatHours(start, end) {
+            const hours = Math.max((end - start) / 3600000, 0);
+            return Math.round(hours * 100) / 100;
+        }
+
+        function formatDateTimeForDisplay(date) {
+            if (!(date instanceof Date)) {
+                return '';
+            }
+            return date.toLocaleString(undefined, {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        function parseTimestamp(value) {
+            if (!value) {
+                return null;
+            }
+            const parsed = new Date(value);
+            return Number.isNaN(parsed.getTime()) ? null : parsed;
+        }
+
+        function pad(value) {
+            return String(value).padStart(2, '0');
+        }
+
+        function downloadICS() {
+            if (!currentBlocks || currentBlocks.length === 0) {
+                return;
+            }
+            const icsText = createICS(currentBlocks);
+            const blob = new Blob([icsText], { type: 'text/calendar;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'lighting-events.ics';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
