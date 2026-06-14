@@ -396,8 +396,11 @@
                     </tr>`;
             }).join('');
 
+            // show monthly summary above the detailed table
+            let html = renderMonthlySummary(blocks, costConfig);
+
             // main table with Duration and kWh
-            let html = `
+            html += `
                 <table>
                     <thead>
                         <tr>
@@ -414,13 +417,11 @@
                     <tbody>${rows}</tbody>
                 </table>`;
 
-            // append monthly summary
-            html += renderMonthlySummary(blocks, costConfig);
             resultsElement.innerHTML = html;
         }
 
         function renderMonthlySummary(blocks, config) {
-            const months = {}; // key => { totalHours, totalKwh, hoursByLevel: {pct: hours}, costByLevel: {pct: cost} }
+            const months = {}; // key => { totalHours, totalKwh, totalCost, hoursByLevel: {pct: hours}, costByLevel: {pct: cost} }
 
             blocks.forEach(block => {
                 if (!block.start || !block.end) return;
@@ -432,11 +433,12 @@
                 const cost = hours * power * config.costPerKwhPence / 100; // pounds
 
                 if (!months[monthKey]) {
-                    months[monthKey] = { totalHours: 0, totalKwh: 0, hoursByLevel: {}, costByLevel: {} };
+                    months[monthKey] = { totalHours: 0, totalKwh: 0, totalCost: 0, hoursByLevel: {}, costByLevel: {} };
                 }
                 const m = months[monthKey];
                 m.totalHours += hours;
                 m.totalKwh += kwh;
+                m.totalCost += cost;
                 const pct = String(block.percentage);
                 m.hoursByLevel[pct] = (m.hoursByLevel[pct] || 0) + hours;
                 m.costByLevel[pct] = (m.costByLevel[pct] || 0) + cost;
@@ -448,15 +450,15 @@
             let out = '<h3>Monthly Summary</h3>';
             monthKeys.forEach(key => {
                 const data = months[key];
-                out += `\n<table>\n<thead><tr><th colspan="4">${key}</th></tr></thead><tbody>`;
-                out += `<tr><th>Total Hours</th><td>${Math.round(data.totalHours*100)/100}</td><th>Total kWh</th><td>${Math.round(data.totalKwh*100)/100}</td></tr>`;
-                out += `<tr><th>Level</th><th>Total Hours</th><th>Total Cost (£)</th><th>kWh</th></tr>`;
+                out += `\n<table>\n<thead><tr><th colspan="6">${key}</th></tr></thead><tbody>`;
+                out += `<tr><th>Total Hours</th><td>${Math.round(data.totalHours*100)/100}</td><th>Total kWh</th><td>${Math.round(data.totalKwh*100)/100}</td><th>Total Cost (£)</th><td>${formatCurrency(Math.round((data.totalCost)*100)/100)}</td></tr>`;
+                out += `<tr><th>Level</th><th>Total Hours</th><th  colspan="2">kWh</th><th  colspan="2">Total Cost (£)</th></tr>`;
                 const levelKeys = Object.keys(data.hoursByLevel).sort((a,b)=>Number(b)-Number(a));
                 levelKeys.forEach(pct => {
                     const hrs = Math.round(data.hoursByLevel[pct]*100)/100;
                     const cost = Math.round((data.costByLevel[pct]||0)*100)/100;
                     const kwh = Math.round(((data.totalKwh ? (data.hoursByLevel[pct] ? (data.hoursByLevel[pct] * ( (getBlockPower(Number(pct), config)) ) ) : 0) : 0))*100)/100;
-                    out += `<tr><td>${pct}%</td><td>${hrs}</td><td>${formatCurrency(cost)}</td><td>${kwh}</td></tr>`;
+                    out += `<tr><td>${pct}%</td><td>${hrs}</td><td colspan="2">${kwh}</td><td colspan="2">${formatCurrency(cost)}</td></tr>`;
                 });
                 out += '</tbody></table>';
             });
@@ -541,7 +543,7 @@
         }
 
         function formatCurrency(value) {
-            return Number(value).toFixed(2);
+            return "£" +Number(value).toFixed(2);
         }
 
         function formatHours(start, end) {
