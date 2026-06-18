@@ -529,8 +529,8 @@
                     return;
                 }
                 const cost = calculateBlockCost(block, costConfig);
-                const summary = `Lights ${block.percentage}% (£${formatCurrency(cost)})`;
-                const description = `Far ${block.far}%\\nNear ${block.near}%\\nCost: £${formatCurrency(cost)}\\nDuration: ${formatHours(block.start, block.end)} hrs`;
+                const summary = `Lights ${block.percentage}% (${formatCurrency(cost)})`;
+                const description = `Far ${block.far}%\nNear ${block.near}%\nCost: ${formatCurrency(cost)}\nDuration: ${formatHours(block.start, block.end)} hrs`;
                 lines.push('BEGIN:VEVENT');
                 lines.push(`UID:${createUID(index, block)}`);
                 lines.push(`DTSTAMP:${formatDateTimeICSUTC(new Date())}`);
