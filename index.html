@@ -132,16 +132,12 @@
                     <input id="power100Input" type="number" min="0" step="0.1" value="26" />
                 </div>
                 <div class="field">
-                    <label for="power60Input">Power kW @ 60%</label>
-                    <input id="power60Input" type="number" min="0" step="0.1" value="16" />
+                    <label for="maxLux100Input">Max Lux @ 100%</label>
+                    <input id="maxLux100Input" type="number" min="0" step="1" value="501" />
                 </div>
                 <div class="field">
-                    <label for="power35Input">Power kW @ 35%</label>
-                    <input id="power35Input" type="number" min="0" step="0.1" value="9" />
-                </div>
-                <div class="field">
-                    <label for="power30Input">Power kW @ 30%</label>
-                    <input id="power30Input" type="number" min="0" step="0.1" value="8" />
+                    <label for="avgLux100Input">Average Lux @ 100%</label>
+                    <input id="avgLux100Input" type="number" min="0" step="1" value="432" />
                 </div>
             </div>
         </div>
@@ -158,9 +154,8 @@
         const icsPreview = document.getElementById('icsPreview');
         const costPenceInput = document.getElementById('costPenceInput');
         const power100Input = document.getElementById('power100Input');
-        const power60Input = document.getElementById('power60Input');
-        const power35Input = document.getElementById('power35Input');
-        const power30Input = document.getElementById('power30Input');
+        const maxLux100Input = document.getElementById('maxLux100Input');
+        const avgLux100Input = document.getElementById('avgLux100Input');
 
         let currentBlocks = [];
 
@@ -168,16 +163,13 @@
         exportButton.addEventListener('click', downloadICS);
         costPenceInput.addEventListener('input', handleSettingsChange);
         power100Input.addEventListener('input', handleSettingsChange);
-        power60Input.addEventListener('input', handleSettingsChange);
-        power35Input.addEventListener('input', handleSettingsChange);
-        power30Input.addEventListener('input', handleSettingsChange);
+        maxLux100Input.addEventListener('input', handleSettingsChange);
+        avgLux100Input.addEventListener('input', handleSettingsChange);
 
         function handleSettingsChange() {
             if (currentBlocks.length > 0) {
                 renderBlocks(currentBlocks);
-                const icsText = createICS(currentBlocks);
-                icsPreview.hidden = false;
-                icsPreview.textContent = icsText;
+                createICS(currentBlocks);
             }
         }
 
@@ -196,12 +188,7 @@
                     currentBlocks = blocks;
                     exportButton.disabled = blocks.length === 0;
                     if (blocks.length > 0) {
-                        const icsText = createICS(blocks);
-                        icsPreview.hidden = false;
-                        icsPreview.textContent = icsText;
-                    } else {
-                        icsPreview.hidden = true;
-                        icsPreview.textContent = '';
+                        createICS(blocks);
                     }
                 })
                 .catch(error => {
@@ -434,7 +421,7 @@
             }).join('');
 
             // show cost-per-hour table above the monthly summary, then the detailed table
-            let html = renderCostPerHourTable(costConfig) + renderMonthlySummary(blocks, costConfig);
+            let html = renderCostPerHourTable(costConfig, blocks) + renderMonthlySummary(blocks, costConfig);
 
             // main table with Duration and kWh
             html += `
@@ -489,29 +476,31 @@
                 const data = months[key];
                 out += `\n<table>\n<thead><tr><th colspan="6">${key}</th></tr></thead><tbody>`;
                 out += `<tr><th>Total Hours</th><td>${Math.round(data.totalHours*100)/100}</td><th>Total kWh</th><td>${Math.round(data.totalKwh*100)/100}</td><th>Total Cost (£)</th><td>${formatCurrency(Math.round((data.totalCost)*100)/100)}</td></tr>`;
-                out += `<tr><th>Level</th><th>Total Hours</th><th  colspan="2">kWh</th><th  colspan="2">Total Cost (£)</th></tr>`;
+                out += `<tr><th>Level</th><th>Total Hours</th><th colspan="2">kWh</th><th colspan="2">Total Cost (£)</th></tr>`;
                 const levelKeys = Object.keys(data.hoursByLevel).sort((a,b)=>Number(b)-Number(a));
                 levelKeys.forEach(pct => {
                     const hrs = Math.round(data.hoursByLevel[pct]*100)/100;
                     const cost = Math.round((data.costByLevel[pct]||0)*100)/100;
                     const kwh = Math.round(((data.totalKwh ? (data.hoursByLevel[pct] ? (data.hoursByLevel[pct] * ( (getBlockPower(Number(pct), config)) ) ) : 0) : 0))*100)/100;
-                    out += `<tr><td>${pct}%</td><td>${hrs}</td><td colspan="2">${kwh}</td><td colspan="2">${formatCurrency(cost)}</td></tr>`;
+                    const lux = calculateLux(Number(pct), config);
+                    out += `<tr><td>${pct}% (${lux.maxLux}L)</td><td>${hrs}</td><td colspan="2">${kwh}</td><td colspan="2">${formatCurrency(cost)}</td></tr>`;
                 });
                 out += '</tbody></table>';
             });
             return out;
         }
 
-        function renderCostPerHourTable(config) {
-            const options = [100, 60, 35, 30];
+        function renderCostPerHourTable(config, blocks) {
             let out = '<h3>Cost per Hour</h3>';
-            out += '<table><thead><tr><th>Level</th><th>Power (kW)</th><th>Cost per hour (£)</th></tr></thead><tbody>';
-            options.forEach(pct => {
+            out += '<table><thead><tr><th>Level</th><th>Power (kW)</th><th>Cost per hour (£)</th><th>Avg Lux</th><th>Max Lux</th></tr></thead><tbody>';
+            const percentages = Array.from(new Set(blocks.map(block => Number(block.percentage))));
+            percentages.sort((a, b) => b - a);
+            percentages.forEach(pct => {
                 const power = getBlockPower(pct, config);
                 const costPerHour = power * config.costPerKwhPence / 100;
-                out += `<tr><td>${pct}%</td><td>${power}</td><td>${formatCurrency(Math.round(costPerHour*100)/100)}</td></tr>`;
-            });
-            out += '</tbody></table>';
+                const lux = calculateLux(pct, config);
+                out += `<tr><td>${pct}%</td><td>${power}</td><td>${formatCurrency(Math.round(costPerHour*100)/100)}</td><td>${lux.avgLux}</td><td>${lux.maxLux}</td></tr>`;
+            });            out += '</tbody></table>';
             return out;
         }
 
@@ -529,6 +518,7 @@
                     return;
                 }
                 const cost = calculateBlockCost(block, costConfig);
+                const lux = calculateLux(block.percentage, costConfig);
                 const summary = `Lights ${block.percentage}% (${formatCurrency(cost)})`;
                 const description = `Far ${block.far}%\nNear ${block.near}%\nCost: ${formatCurrency(cost)}\nDuration: ${formatHours(block.start, block.end)} hrs`;
                 lines.push('BEGIN:VEVENT');
@@ -571,9 +561,8 @@
             return {
                 costPerKwhPence: Number(costPenceInput.value) || 24.79,
                 power100: Number(power100Input.value) || 26,
-                power60: Number(power60Input.value) || 16,
-                power35: Number(power35Input.value) || 9,
-                power30: Number(power30Input.value) || 8,
+                maxLux100: Number(maxLux100Input.value) || 501,
+                avgLux100: Number(avgLux100Input.value) || 432,
             };
         }
 
@@ -584,11 +573,14 @@
             return Math.round(costPence) / 100;
         }
 
+        function calculateLux(percentage, config) {
+            const scale = Number(percentage) / 100;
+            const maxLux = Math.round(config.maxLux100 * scale);
+            const avgLux = Math.round(config.avgLux100 * scale);
+            return { avgLux, maxLux };
+        }
+
         function getBlockPower(percentage, config) {
-            if (percentage === 100) return config.power100;
-            if (percentage === 60) return config.power60;
-            if (percentage === 35) return config.power35;
-            if (percentage === 30) return config.power30;
             return Math.round((config.power100 * (percentage / 100)) * 100) / 100;
         }
 
